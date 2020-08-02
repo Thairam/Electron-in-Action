@@ -1,4 +1,5 @@
 const { remote, ipcRenderer } = require('electron')
+const { Menu } = remote
 const mainProcess = remote.require('./main.js')
 const currentWindow = remote.getCurrentWindow()
 
@@ -50,6 +51,15 @@ const renderFile = (file, content) => {
     renderMarkdownToHtml(content)
     updateUserInterface(false)
 }
+
+const markdownContextMenu = Menu.buildFromTemplate([
+    { label: 'Open File', click() { mainProcess.getFileFromUser() } },
+    { type: 'separator' },
+    { label: 'Cut', role: 'cut' },
+    { label: 'Copy', role: 'copy' },
+    { label: 'Paste', role: 'paste' },
+    { label: 'Select All', role: 'selectall' },
+])
 
 markdownView.addEventListener('keyup', (event) => {
     const currentContent = event.target.value
@@ -125,6 +135,14 @@ ipcRenderer.on('file-changed', (event, file, content) => {
     renderFile(file, content)
 })
 
+ipcRenderer.on('save-markdown', () => {
+    mainProcess.saveMarkdown(currentWindow, filePath, markdownView.value)
+})
+
+ipcRenderer.on('save-html', () => {
+    mainProcess.saveHtml(currentWindow, filePath, markdownView.value)
+})
+
 document.addEventListener('dragstart', event => event.preventDefault())
 document.addEventListener('dragover', event => event.preventDefault())
 document.addEventListener('dragleave', event => event.preventDefault())
@@ -153,4 +171,9 @@ markdownView.addEventListener('drop', (event) => {
     }
     markdownView.classList.remove('drag-over')
     markdownView.classList.remove('drag-error')
+})
+
+markdownView.addEventListener('contextmenu', (event) => {
+    event.preventDefault()
+    markdownContextMenu.popup()
 })

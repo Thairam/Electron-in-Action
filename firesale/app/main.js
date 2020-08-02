@@ -1,4 +1,5 @@
-const { app, BrowserWindow, dialog } = require('electron')
+const { app, BrowserWindow, dialog, Menu } = require('electron')
+const applicationMenu = require('./application-menu')
 const fs = require('fs')
 
 const windows = new Set()
@@ -7,6 +8,7 @@ const openFiles = new Map();
 let mainWindow = null
 
 app.on('ready', () => {
+    Menu.setApplicationMenu(applicationMenu)
     createWindow()
 })
 
@@ -50,7 +52,6 @@ const createWindow = exports.createWindow = () => {
     })
 
     newWindow.loadFile(`${__dirname}/index.html`)
-    newWindow.setMenu(null)
 
     newWindow.once('ready-to-show', () => {
         newWindow.show()
