@@ -1,5 +1,5 @@
 const { app, BrowserWindow, dialog, Menu } = require('electron')
-const applicationMenu = require('./application-menu')
+const createApplicationMenu = require('./application-menu')
 const fs = require('fs')
 
 const windows = new Set()
@@ -8,7 +8,7 @@ const openFiles = new Map();
 let mainWindow = null
 
 app.on('ready', () => {
-    Menu.setApplicationMenu(applicationMenu)
+    createApplicationMenu()
     createWindow()
 })
 
@@ -22,15 +22,6 @@ app.on('window-all-closed', () => {
 
 app.on('activate', (event, hasVisibleWindows) => {
     if (!hasVisibleWindows) { createWindow() }
-})
-
-app.on('will-finish-launching', () => {
-    app.on('open-file', (event, file) => {
-        const win = createWindow()
-        win.once('ready-to-show', () => {
-            openFile(win, file)
-        })
-    })
 })
 
 const createWindow = exports.createWindow = () => {
@@ -57,6 +48,8 @@ const createWindow = exports.createWindow = () => {
         newWindow.show()
     })
 
+    newWindow.on('focus', createApplicationMenu);
+
     newWindow.on('close', (event) => {
         if (newWindow.isDocumentEdited()) {
             event.preventDefault()
@@ -69,8 +62,8 @@ const createWindow = exports.createWindow = () => {
                     'Quit Anyway',
                     'Cancel',
                 ],
-                defaultId: 0,
-                cancelId: 1
+                cancelId: 1,
+                defaultId: 0
             })
             if (result === 0) newWindow.destroy()
         }
@@ -78,11 +71,12 @@ const createWindow = exports.createWindow = () => {
 
     newWindow.on('closed', () => {
         windows.delete(newWindow)
-        stopWatchingFile(newWindow)
+        createApplicationMenu()
         newWindow = null
     })
 
     windows.add(newWindow)
+    return newWindow
 }
 
 const getFileFromUser = exports.getFileFromUser = (targetWindow) => {

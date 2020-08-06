@@ -1,12 +1,8 @@
-const { remote, ipcRenderer } = require('electron')
-const { Menu } = remote
+const { remote, ipcRenderer, shell } = require('electron')
+const { Menu } = remote // A
+const path = require('path')
 const mainProcess = remote.require('./main.js')
 const currentWindow = remote.getCurrentWindow()
-
-const path = require('path')
-
-let filePath = null
-let originalContent = ''
 
 const marked = require('marked')
 
@@ -20,8 +16,26 @@ const saveHtmlButton = document.querySelector('#save-html')
 const showFileButton = document.querySelector('#show-file')
 const openInDefaultButton = document.querySelector('#open-in-default')
 
+let filePath = null
+let originalContent = ''
+
+const isDifferentContent = (content) => content !== markdownView.value
+
 const renderMarkdownToHtml = (markdown) => {
     htmlView.innerHTML = marked(markdown, { sanitize: true })
+}
+
+const renderFile = (file, content) => {
+    filePath = file
+    originalContent = content
+
+    markdownView.value = content
+    renderMarkdownToHtml(content)
+
+    showFileButton.disabled = false
+    openInDefaultButton.disabled = false
+
+    updateUserInterface(false)
 }
 
 const updateUserInterface = (isEdited) => {
@@ -37,30 +51,6 @@ const updateUserInterface = (isEdited) => {
     revertButton.disabled = !isEdited
 }
 
-const getDraggedFile = (event) => event.dataTransfer.items[0]
-const getDroppedFile = (event) => event.dataTransfer.files[0]
-
-const fileTypeIsSupported = (file) => {
-    return ['text/plain', 'text/markdown'].includes(file.type)
-}
-
-const renderFile = (file, content) => {
-    filePath = file
-    originalContent = content
-    markdownView.value = content
-    renderMarkdownToHtml(content)
-    updateUserInterface(false)
-}
-
-const markdownContextMenu = Menu.buildFromTemplate([
-    { label: 'Open File', click() { mainProcess.getFileFromUser() } },
-    { type: 'separator' },
-    { label: 'Cut', role: 'cut' },
-    { label: 'Copy', role: 'copy' },
-    { label: 'Paste', role: 'paste' },
-    { label: 'Select All', role: 'selectall' },
-])
-
 markdownView.addEventListener('keyup', (event) => {
     const currentContent = event.target.value
     renderMarkdownToHtml(currentContent)
@@ -75,20 +65,6 @@ openFileButton.addEventListener('click', () => {
     mainProcess.getFileFromUser(currentWindow)
 })
 
-ipcRenderer.on('file-opened', (event, file, content) => {
-    filePath = file
-    originalContent = content
-
-    markdownView.value = content
-    renderMarkdownToHtml(content)
-
-    updateUserInterface()
-})
-
-saveHtmlButton.addEventListener('click', () => {
-    mainProcess.saveHtml(currentWindow, htmlView.innerHTML)
-})
-
 saveMarkdownButton.addEventListener('click', () => {
     mainProcess.saveMarkdown(currentWindow, filePath, markdownView.value)
 })
@@ -97,6 +73,25 @@ revertButton.addEventListener('click', () => {
     markdownView.value = originalContent
     renderMarkdownToHtml(originalContent)
 })
+
+saveHtmlButton.addEventListener('click', () => {
+    mainProcess.saveHtml(currentWindow, htmlView.innerHTML)
+})
+
+const showFile = () => {
+    if (!filePath) { return alert('This file has not been saved to the file system.') }
+    shell.showItemInFolder(filePath)
+}
+
+const openInDefaultApplication = () => {
+    if (!filePath) { return alert('This file has not been saved to the file system.') }
+    shell.openItem(filePath)
+}
+
+showFileButton.addEventListener('click', showFile)
+openInDefaultButton.addEventListener('click', openInDefaultApplication)
+ipcRenderer.on('show-file', showFile)
+ipcRenderer.on('open-in-default', openInDefaultApplication)
 
 ipcRenderer.on('file-opened', (event, file, content) => {
     if (currentWindow.isDocumentEdited() && isDifferentContent(content)) {
@@ -135,21 +130,22 @@ ipcRenderer.on('file-changed', (event, file, content) => {
     renderFile(file, content)
 })
 
-ipcRenderer.on('save-markdown', () => {
-    mainProcess.saveMarkdown(currentWindow, filePath, markdownView.value)
-})
-
-ipcRenderer.on('save-html', () => {
-    mainProcess.saveHtml(currentWindow, filePath, markdownView.value)
-})
-
+/* Implement Drag and Drop */
 document.addEventListener('dragstart', event => event.preventDefault())
 document.addEventListener('dragover', event => event.preventDefault())
 document.addEventListener('dragleave', event => event.preventDefault())
 document.addEventListener('drop', event => event.preventDefault())
 
+const getDraggedFile = (event) => event.dataTransfer.items[0]
+const getDroppedFile = (event) => event.dataTransfer.files[0]
+
+const fileTypeIsSupported = (file) => {
+    return ['text/plain', 'text/markdown'].includes(file.type)
+}
+
 markdownView.addEventListener('dragover', (event) => {
     const file = getDraggedFile(event)
+
     if (fileTypeIsSupported(file)) {
         markdownView.classList.add('drag-over')
     } else {
@@ -164,16 +160,47 @@ markdownView.addEventListener('dragleave', () => {
 
 markdownView.addEventListener('drop', (event) => {
     const file = getDroppedFile(event)
+
     if (fileTypeIsSupported(file)) {
         mainProcess.openFile(currentWindow, file.path)
     } else {
         alert('That file type is not supported')
     }
+
     markdownView.classList.remove('drag-over')
     markdownView.classList.remove('drag-error')
 })
 
+const createContextMenu = () => {
+    return Menu.buildFromTemplate([
+        { label: 'Open File', click() { mainProcess.getFileFromUser() } },
+        {
+            label: 'Show File in Folder',
+            click: showFile,
+            enabled: !!filePath
+        },
+        {
+            label: 'Open in Default',
+            click: openInDefaultApplication,
+            enabled: !!filePath
+        },
+        { type: 'separator' },
+        { label: 'Cut', role: 'cut' },
+        { label: 'Copy', role: 'copy' },
+        { label: 'Paste', role: 'paste' },
+        { label: 'Select All', role: 'selectall' },
+    ])
+}
+
 markdownView.addEventListener('contextmenu', (event) => {
     event.preventDefault()
-    markdownContextMenu.popup()
+    createContextMenu().popup()
+})
+
+ipcRenderer.on('save-markdown', () => {
+    mainProcess.saveMarkdown(currentWindow, filePath, markdownView.value)
+})
+
+ipcRenderer.on('save-html', () => {
+    mainProcess.saveHtml(currentWindow, filePath, markdownView.value)
 })
